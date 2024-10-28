@@ -1,69 +1,54 @@
 package com.example.langchain_test;
 
 import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 public class MarkdownParser {
-	private boolean isHeader(String line) {
-        return line.startsWith("#");
-    }
-	
+	private static final Pattern HEADER_PATTERN = Pattern.compile("^(#+)\\s");
+
 	private int calcHeaderDepth(String line) {
-		var depth = 0;
-		try {
-			while (line.charAt(depth) == '#') {
-				depth++;
-			}
-		} catch (IndexOutOfBoundsException e) {
-			return -1;
-		}
-		return depth;
+		var matcher = HEADER_PATTERN.matcher(line);
+		return matcher.find() ? matcher.group(1).length() : -1;
 	}
 
 	public String parseMarkdown(String markdown) {
-        String[] lines = markdown.split("\n");
+		String[] lines = markdown.split("\n");
 
-        var currentHeaderDepth = 1;
-        var headerDepthMap = new HashMap<Integer, Integer>(); 
-        var headerStr = "";
-        
-        var intermediateText = "";
-        
-        for (var line : lines) {
-            line = line.trim();
+		var currentHeaderDepth = 0; // depth of h1 is 1
+		var headerDepthMap = new HashMap<Integer, Integer>();
+		var headerStr = "";
 
-            if (isHeader(line)) {
-            	var depth = calcHeaderDepth(line);
-				if (depth < 0) {
-					continue;
-				}
-				if (depth < currentHeaderDepth) {
-					for (int i = depth + 1; i <= currentHeaderDepth; i++) {
-						headerDepthMap.remove(i);
-					}
-				}
-				if (!headerDepthMap.containsKey(depth)) {
-					headerDepthMap.put(depth, 0);
-				}
-				else {
-					headerDepthMap.put(depth, headerDepthMap.get(depth) + 1);
-				}
-				currentHeaderDepth = depth;
-		
-				depth = 1;
-				headerStr = "";
-				while(headerDepthMap.containsKey(depth)) {
-					headerStr += "h" + depth + "#" + headerDepthMap.get(depth) + ",";
-                    depth++;
-				}
-				headerStr = headerStr.substring(0, headerStr.length() - 1);
-            }
-            else if(line.isEmpty()) {
-            	// skip empty lines
-            }
-			else {
-				intermediateText += "{" + headerStr + "} " + line + "\n";
+		var intermediateText = new StringBuilder();
+
+		for (var line : lines) {
+			line = line.trim();
+			if (line.isEmpty()) {
+				continue;
 			}
-        }
-        return intermediateText;        
-    }
+			var depth = calcHeaderDepth(line);
+			if (depth < 0) {
+				// line is paragraph
+				intermediateText.append("{%s} %s\n".formatted(headerStr, line));
+				continue;
+			}
+
+			// line is header
+			if (depth < currentHeaderDepth) {
+				for (int i = depth + 1; i <= currentHeaderDepth; i++) {
+					headerDepthMap.remove(i);
+				}
+			}
+			currentHeaderDepth = depth;
+			
+			headerDepthMap.put(depth, headerDepthMap.getOrDefault(depth, -1) + 1);
+
+			headerStr = headerDepthMap.entrySet().stream()
+					.sorted(Map.Entry.comparingByKey())
+					.map(entry -> "h%d#%d".formatted(entry.getKey(), entry.getValue())) 
+					.reduce((a, b) -> "%s,%s".formatted(a, b))
+					.orElse("");
+		}
+		return intermediateText.toString();
+	}
 }
